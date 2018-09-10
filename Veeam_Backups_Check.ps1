@@ -108,32 +108,43 @@ Function Get-VeeamVersion {
 function IsRPOValid {
     <#
     .SYNOPSIS
-    Function  that calculate timespan
+    Function  that check if RPO is valid in a given timespan
     .DESCRIPTION
-    This function compares two dates and returns true if [param] date1 is equal or greater than rpo  
+    This function compares two dates and returns true if [param] date1 is equal or greater than rpo and if last job session is successful.
+    $rpo : rpo to compare.
+    $timespan : timespn between $rpo and the last successful job session passed as param ($date1)
+    for more info : https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_functions_advanced_parameters?view=powershell-6
     .EXAMPLE
-    RPO([dateTime]date)
-    .PARAMETER date1
-    The date to compare.
+    IsRPOValid $jobName
+    .PARAMETER job
+    The job to check
     #>
     [CmdletBinding()]
-    param
-    (
-      [Parameter(Mandatory=$True,ValidateNotnullOrEmpty, Position = 0)]
-      [datetime]$date1
+    param(
+        # job name
+        [Parameter(Mandatory = $true)]
+        [string]$jobName
     )
     begin {
-    write-verbose "declaring variables"
-     $rpo = $now.AddDays(-$period)
-     $timeSpan = New-TimeSpan -Start $date1.Date -End  $rpo.Date
+        write-verbose "Function begin. declaring variables"
+        $session = Get-VBRBackupSession | Where-Object {$_.JobName -eq $jobName -and $_.Result -eq "idle" } | Sort-Object creationtime -Descending | Select-Object -First 1
+        $rpo = $now.AddDays(-$period)
+        #if timespan is negative == RPO is not good" 
+        $timeSpan = New-TimeSpan -Start $rpo.Date  -End  $($session.EndTime).Date
+        Write-Verbose "func jobname : $($jobName)"
+        Write-Verbose "session date : $($session.EndTime)"
+        write-verbose "declaring variables"
+        Write-Verbose "RPO date : $($rpo)"
+        Write-Verbose "timespan : $($timeSpan)"
     }
     process {
   
-      write-verbose "Beginning process comparison between the two "
-      $timeSpan -ge 0
+        write-verbose "Function process begin. comparison between the dates"
+        Write-Verbose " return : $($timespan -ge 0 -and $session.State -ne "Failed")"
+        return $timespan -ge 0 -and $session.State -ne "Failed"   
     }
-    end{}
-  }
+    end {}
+}
 
 #endRegion Function
 
@@ -148,8 +159,6 @@ if ($null -eq $job) {
 else {
     $state = $job.getLastState()
 }
-$lastOkSession = Get-VBRBackupSession | Where-Object {$_.JobName -eq $job.Name -and $_.Result -eq "success" } | Sort-Object creationtime -Descending | Select-Object -First 1
-
 $VeeamVersion = Get-VeeamVersion
 If ($VeeamVersion -lt 9.5) {
     Write-Host "Script requires VBR v9.5" -ForegroundColor Red
@@ -166,40 +175,25 @@ switch ($state) {
         exit 0
     }
     idle {
+        Write-Verbose "function IsRPOValid = '$(IsRPOValid $job.name)'." 
         #Recovery Point Objective 
-        $rpo
-         = (Get-Date).AddDays(-$period)
-        if ((get-date $lastOkSession.EndTime) -ge (get-date $rpo
-        ) -and ($lastOkSession.State -ne "failed")) {
+        if (IsRPOValid $job.name) {
             Write-Host "OK! $name waiting for new restore points."
             exit 0
         } 
-        elseif ((get-date $lastOkSession.EndTime) -lt (get-date $rpo
-        ) -and ($lastOkSession.State -ne "failed")) {
-            Write-Host ("CRITICAL! the last successful session is {0} day old." -f $(Get-Date $lastOkSession.EndTime))
-            exit 2
-        }
         else {
-            Write-Host "WARNING! Job $name didn't fully succeed."
-            exit 1
+            Write-Host ("CRITICAL! the last succesful session is {0} days older !." -f $period)
+            exit 2
         }
     }
     stopped {
-        #Recovery Point Objective 
-        $rpo = (Get-Date).AddDays(-$period)
-        if ((get-date $lastOkSession.EndTime) -gt (get-date $rpo
-        ) -and ($lastOkSession.State -ne "failed")) {
+        if (IsRPOValid $job.name) {
             Write-Host "OK! $name waiting for new restore points."
             exit 0
         } 
-        elseif ((get-date $lastOkSession.EndTime) -le (get-date $rpo
-        ) -and ($lastOkSession.State -ne "failed")) {
-            Write-Host ("CRITICAL! the last successful session is {0} days old." -f $((Get-Date $lastOkSession.EndTime).Day))
-            exit 2
-        }
         else {
-            Write-Host "WARNING! Job $name didn't fully succeed."
-            exit 1
+            Write-Host ("CRITICAL! the last successful session was on {0}." -f $period)
+            exit 2
         }
     }
 
