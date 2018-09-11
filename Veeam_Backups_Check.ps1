@@ -127,7 +127,7 @@ function IsRPOValid {
     )
     begin {
         write-verbose "Function begin. declaring variables"
-        $session = Get-VBRBackupSession | Where-Object {$_.JobName -eq $jobName -and $_.Result -eq "idle" } | Sort-Object creationtime -Descending | Select-Object -First 1
+        $session = Get-VBRBackupSession | Where-Object {$_.JobName -eq $jobName -and $_.Result -eq "Success" } | Sort-Object creationtime -Descending | Select-Object -First 1
         $rpo = $now.AddDays(-$period)
         #if timespan is negative == RPO is not good" 
         $timeSpan = New-TimeSpan -Start $rpo.Date  -End  $($session.EndTime).Date
@@ -192,7 +192,7 @@ switch ($state) {
             exit 0
         } 
         else {
-            Write-Host ("CRITICAL! the last successful session was on {0}." -f $period)
+            Write-Host ("CRITICAL! the last succesful session is {0} days older !." -f $period)
             exit 2
         }
     }
