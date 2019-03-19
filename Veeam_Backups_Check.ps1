@@ -30,7 +30,7 @@
     .NOTES
     Author: Arnaud Mutana
     Last Updated: MARCH 2019
-    Version: 2
+    Version: 2.0
   
     Requires:
     Veeam Backup & Replication v9.5 Update 3 (full or console install)
@@ -95,13 +95,13 @@ $now = (Get-Date)
 function Get-ExecutionMetaData {
     [CmdletBinding()]
     param ()
-    $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $IsAdmin = [System.Security.Principal.WindowsPrincipal]::new($id).IsInRole('administrators')
+    $IsAdmin = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    $IsAdmin.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     $os = (Get-CimInstance Win32_Operatingsystem).Caption
      
     $meta = [pscustomobject]@{
         User         = "$($env:userdomain)\$($env:USERNAME)"
-        IsAdmin      = $IsAdmin
+        IsAdmin      = $IsAdmin.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
         Computername = $env:COMPUTERNAME
         OS           = $os
         Host         = $($host.Name)
