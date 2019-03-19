@@ -29,8 +29,8 @@
   
     .NOTES
     Author: Arnaud Mutana
-    Last Updated: SEPTEMBER 2018
-    Version: 1.1
+    Last Updated: MARCH 2019
+    Version: 2
   
     Requires:
     Veeam Backup & Replication v9.5 Update 3 (full or console install)
@@ -41,32 +41,36 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
+    [Parameter( Position = 0)]
     $name = $args[0],
     [Parameter(Position = 1)]
     $period = $args[1],
     #Location of Veeam executable (Veeam.Backup.Shell.exe)
-    $veeamExePath = "C:\Program Files\Veeam\Backup and Replication\Backup\Veeam.Backup.Shell.exe",
-    $Server = "localhost"
+    $veeamExecutePath = "C:\Program Files\Veeam\Backup and Replication\Backup\Veeam.Backup.Shell.exe",
+    $Server = "localhost"    
 )
 
 #---------------------------------------------------------[Initialisations]--------------------------------------------------------
 
 #region Connect
 # Load required Snapins and Modules
+$start = Get-Date
+Write-Verbose "[00:00:00.0000000] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: $($MyInvocation.Mycommand)"  
+Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Loading PSSNapins"
 if ($null -eq (Get-PSSnapin -Name VeeamPSSNapin -ErrorAction SilentlyContinue)) {
-    Add-PSSnapin VeeamPSSNapin
+    $snapin = Add-PSSnapin VeeamPSSNapin -PassThru
+    Write-Verbose "[$((New-TimeSpan -Start $start).ToString()) [$((get-date).TimeOfDay.ToString())]] [BEGIN  ] Loading $($snapin)"
 }
 # Connect to VBR server
 if ($Server -eq $null) {
+    Write-Verbose "[$((New-TimeSpan -Start $start).ToString()) [$((get-date).TimeOfDay.ToString())]] [BEGIN  ] Connecting to VBR Server"
     try {
         Disconnect-VBRServer
         Connect-VBRServer -Server $server 
     }
     catch {
-        Write-Host "Unable to connect to VBR server - $server" -ForegroundColor Red
+        Write-Error "Unable to connect to VBR server - $server"
         exit 3
-      
     }   
 }
 #endregion
@@ -81,27 +85,63 @@ $job
 #last known successful session
 $lastOkSession 
 #get today date 
-$now = (Get-Date)
+$now = (Get-Date) 
 #endregion variables 
 
 #----------------------------------------------------------[Functions]----------------------------------------------------------
 
 #region Function
 
+function Get-ExecutionMetaData {
+    [CmdletBinding()]
+    param ()
+    $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $IsAdmin = [System.Security.Principal.WindowsPrincipal]::new($id).IsInRole('administrators')
+    $os = (Get-CimInstance Win32_Operatingsystem).Caption
+     
+    $meta = [pscustomobject]@{
+        User         = "$($env:userdomain)\$($env:USERNAME)"
+        IsAdmin      = $IsAdmin
+        Computername = $env:COMPUTERNAME
+        OS           = $os
+        Host         = $($host.Name)
+        PSVersion    = $($PSVersionTable.PSVersion)
+        Runtime      = $(Get-Date)
+        Session      = "Session"
+    }
+     
+    $meta
+}
 Function Get-VeeamVersion {
-    Begin {}
+    [CmdletBinding()]
+    param(
+        $veeamExePath
+    )
+    Begin {
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: $($MyInvocation.MyCommand)"
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Getting Veeam Execute Path"
+        $veeamExePath = (Get-Item $veeamExecutePath)
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Veeam Execute path : $($veeamExePath)"
+    }
     Process {
         Try {
-            $veeamExe = Get-Item $veeamExePath
-            $VeeamVersion = $veeamExe.VersionInfo.ProductVersion
-            Return $VeeamVersion
+            Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [PROCESS  ] Getting Veeam Version"
+            $veeamVersion = $veeamExepath.VersionInfo.ProductVersion
+            Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [PROCESS  ] Version : $($veeamVersion)"
+            if ($Null -eq $veeamVersion) {
+                throw "Unable to get veeam version"
+            }
+            
         }
         Catch {
-            Write-Host "Unable to Locate Veeam executable, check path - $veeamExePath" -ForegroundColor Red
+            Write-Error $_
             exit  3 
         }
     }
-    End {}
+    End {
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [END  ] Ending : $($MyInvocation.Mycommand)"
+        Return $VeeamVersion
+    }
 }
 
 # Convert mode (timeframe) to hours
@@ -126,24 +166,31 @@ function IsRPOValid {
         [string]$jobName
     )
     begin {
-        write-verbose "Function begin. declaring variables"
-        $session = Get-VBRBackupSession | Where-Object {$_.JobName -eq $jobName -and $_.Result -eq "Success" } | Sort-Object creationtime -Descending | Select-Object -First 1
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: $($MyInvocation.MyCommand)"
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: Getting Last successful Session"
+        $session = Get-VBRBackupSession | Where-Object {$_.JobName -eq $jobName <#-and $_.Result -eq "Success" #> } | Sort-Object creationtime -Descending | Select-Object -First 1
         $rpo = $now.AddDays(-$period)
         #if timespan is negative == RPO is not good" 
         $timeSpan = New-TimeSpan -Start $rpo.Date  -End  $($session.EndTime).Date
-        Write-Verbose "func jobname : $($jobName)"
-        Write-Verbose "session date : $($session.EndTime)"
-        write-verbose "declaring variables"
-        Write-Verbose "RPO date : $($rpo)"
-        Write-Verbose "timespan : $($timeSpan)"
+       
     }
     process {
   
-        write-verbose "Function process begin. comparison between the dates"
-        Write-Verbose " return : $($timespan -ge 0 -and $session.State -ne "Failed")"
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [PROCESS  ] Starting: Current Session Info"
+        $currentSessionInfo = [PSCustomObject]@{
+            Result       = $session.Result;
+            State        = $session.State; 
+            creationtime = $session.CreationTime; 
+            EndTime      = $session.EndTime; 
+            RPO          = $rpo; 
+            Timespan     = $timeSpan
+        }
+        Write-Verbose $currentSessionInfo 
         return $timespan -ge 0 -and $session.State -ne "Failed"   
     }
-    end {}
+    end {
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [End  ] Ending: $($MyInvocation.Mycommand)"
+    }
 }
 
 #endRegion Function
@@ -151,9 +198,14 @@ function IsRPOValid {
 #-----------------------------------------------------------[Execution]------------------------------------------------------------
 
 #region Report
+Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: $($MyInvocation.MyCommand)"
+$metadata = Get-ExecutionMetaData -Verbose:$false | Out-String
+Write-Verbose "[BEGIN  ] Execution Metadata:"
+Write-Verbose $metadata
 $job = Get-VBRJob -Name $name
+Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Processing job state"
 if ($null -eq $job) {
-    Write-Host "UNKNOWN! job name is null or unknown. exiting script"
+    Write-Error "UNKNOWN! job name is null or unknown. exiting script"
     exit 3
 }
 else {
@@ -161,10 +213,11 @@ else {
 }
 $VeeamVersion = Get-VeeamVersion
 If ($VeeamVersion -lt 9.5) {
-    Write-Host "Script requires VBR v9.5" -ForegroundColor Red
-    Write-Host "Version detected - $VeeamVersion" -ForegroundColor Red
+    Write-Error "Script requires VBR v9.5"
+    Write-Error "Version detected - $VeeamVersion"
     exit 3
 }
+Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] job last state : $($state)"
 switch ($state) {
     Failed {	
         Write-Host "CRITICAL! Errors were encountered during the backup process of the following job: $name." 
@@ -202,4 +255,5 @@ switch ($state) {
         exit 3
     }
 }
+Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: $($MyInvocation.MyCommand)"
 #endregion Report 
