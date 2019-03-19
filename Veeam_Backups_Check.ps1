@@ -167,7 +167,7 @@ function IsRPOValid {
     )
     begin {
         Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: $($MyInvocation.MyCommand)"
-        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: Getting Last successful Session"
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Getting Last successful Session"
         $session = Get-VBRBackupSession | Where-Object {$_.JobName -eq $jobName <#-and $_.Result -eq "Success" #> } | Sort-Object creationtime -Descending | Select-Object -First 1
         $rpo = $now.AddDays(-$period)
         #if timespan is negative == RPO is not good" 
@@ -176,7 +176,7 @@ function IsRPOValid {
     }
     process {
   
-        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [PROCESS  ] Starting: Current Session Info"
+        Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [PROCESS  ] Current Session Info"
         $currentSessionInfo = [PSCustomObject]@{
             Result       = $session.Result;
             State        = $session.State; 
@@ -255,5 +255,5 @@ switch ($state) {
         exit 3
     }
 }
-Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [BEGIN  ] Starting: $($MyInvocation.MyCommand)"
+Write-Verbose "[$((New-TimeSpan -Start $start).ToString())] [$((get-date).TimeOfDay.ToString())] [END  ] Ending: $($MyInvocation.MyCommand)"
 #endregion Report 
