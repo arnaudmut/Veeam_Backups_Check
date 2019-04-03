@@ -1,5 +1,5 @@
 # VEEAM_BACKUPS_CHECK
-Veeam_backups_check is a simple powershell monitoring script compatible with centreon nagios for Veaam Backups and Replication.  
+Veeam_backups_check is a simple powershell monitoring script compatible with centreon and nagios for Veaam Backups and Replication.  
 
 ## Usage
 
